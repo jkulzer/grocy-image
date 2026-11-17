@@ -1,0 +1,28 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "config:recommended",
+    "docker:pinDigests",              // pins FROM lines by digest
+    "helpers:pinGitHubActionDigests", // pins actions by commit SHA
+  ],
+  customManagers: [{
+    customType: "regex",
+    managerFilePatterns: ["/^Dockerfile$/"],
+    matchStrings: [
+      "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\nARG GROCY_VERSION=(?<currentValue>\\S+)\\nARG GROCY_SHA256=(?<currentDigest>[a-f0-9]{64})",
+    ],
+  }],
+  packageRules: [
+    {
+      description: "Base images and actions: set automerge to true once you trust the pipeline",
+      matchManagers: ["dockerfile", "github-actions"],
+      matchUpdateTypes: ["digest", "patch", "pin", "pinDigest"],
+      automerge: false,
+    },
+    {
+      description: "Grocy releases and PHP minor/major bumps are always manual (DB migrations are one-way)",
+      matchPackageNames: ["grocy/grocy", "php"],
+      automerge: false,
+    },
+  ],
+}

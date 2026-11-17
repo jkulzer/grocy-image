@@ -1,0 +1,14 @@
+{
+	admin off
+	auto_https off
+	frankenphp
+}
+
+:8080 {
+	root * /app/public
+	encode zstd gzip
+	header -Server
+	@dotfiles path */.*
+	respond @dotfiles 404
+	php_server
+}

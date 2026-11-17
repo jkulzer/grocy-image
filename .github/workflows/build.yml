@@ -1,0 +1,95 @@
+name: build
+on:
+  push:
+    branches: [main]
+    paths: [Dockerfile, "*.conf", "*.ini", ".github/workflows/build.yml"]
+  pull_request:
+    paths: [Dockerfile, "*.conf", "*.ini", ".github/workflows/build.yml"]
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve names and version
+        run: |
+          echo "REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+          echo "GROCY_VERSION=$(grep -oP '^ARG GROCY_VERSION=v\K\S+' Dockerfile)" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build locally (for tests and scan)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          load: true
+          push: false
+          no-cache: ${{ github.event_name == 'schedule' }}
+          tags: local/grocy-${{ matrix.target }}:ci
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,scope=${{ matrix.target }},mode=max
+
+      - name: Smoke test (backend)
+        if: matrix.target == 'backend'
+        run: |
+          docker run --rm --read-only local/grocy-backend:ci php -r '
+            foreach (["gd","intl","pdo_sqlite","mbstring","fileinfo","ctype","opcache"] as $e)
+              if (!extension_loaded($e)) { fwrite(STDERR, "missing $e\n"); exit(1); }'
+
+      - name: Smoke test (frontend)
+        if: matrix.target == 'frontend'
+        run: docker run --rm local/grocy-frontend:ci nginx -t
+
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: local/grocy-${{ matrix.target }}:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ env.REPO_OWNER }}/grocy-${{ matrix.target }}
+          tags: |
+            type=raw,value=${{ env.GROCY_VERSION }}
+            type=sha,prefix=sha-
+
+      - name: Push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=${{ matrix.target }}
