@@ -1,4 +1,4 @@
-FROM alpine:3.22 AS fetch
+FROM alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f AS fetch
 # renovate: datasource=github-release-attachments depName=grocy/grocy
 ARG GROCY_VERSION=v4.7.1
 ARG GROCY_SHA256=c4a10e96ed76664baf465e9b27dc7a31aa08c0e3ad876afdfae4f1ff9ab2fc19
@@ -9,7 +9,7 @@ RUN apk add --no-cache curl unzip \
  && mkdir /app && unzip -q /tmp/grocy.zip -d /app \
  && chmod -R go-w,a+rX /app
 
-FROM dunglas/frankenphp:1-php8.5-alpine
+FROM dunglas/frankenphp:1-php8.5-alpine@sha256:2423ae33ccb78af1e83e4815b5776b59e61af1000a5bb707c2cd8b84103e853d
 RUN install-php-extensions gd intl opcache \
  && setcap -r /usr/local/bin/frankenphp
 COPY Caddyfile /etc/frankenphp/Caddyfile
