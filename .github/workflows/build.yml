@@ -2,9 +2,9 @@ name: build
 on:
   push:
     branches: [main]
-    paths: [Dockerfile, "*.conf", "*.ini", ".github/workflows/build.yml"]
+    paths: [Dockerfile, Caddyfile, "*.ini", ".github/workflows/build.yml"]
   pull_request:
-    paths: [Dockerfile, "*.conf", "*.ini", ".github/workflows/build.yml"]
+    paths: [Dockerfile, Caddyfile, "*.ini", ".github/workflows/build.yml"]
   schedule:
     - cron: "0 4 * * 1"
   workflow_dispatch:
@@ -20,10 +20,6 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [backend, frontend]
     steps:
       - uses: actions/checkout@v4
 
@@ -45,29 +41,45 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          target: ${{ matrix.target }}
           load: true
           push: false
           no-cache: ${{ github.event_name == 'schedule' }}
-          tags: local/grocy-${{ matrix.target }}:ci
-          cache-from: type=gha,scope=${{ matrix.target }}
-          cache-to: type=gha,scope=${{ matrix.target }},mode=max
+          tags: local/grocy:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Smoke test (backend)
-        if: matrix.target == 'backend'
+      - name: Extension check
         run: |
-          docker run --rm --read-only local/grocy-backend:ci php -r '
-            foreach (["gd","intl","pdo_sqlite","mbstring","fileinfo","ctype","opcache"] as $e)
+          docker run --rm --read-only --entrypoint php local/grocy:ci -r '
+            foreach (["gd","intl","pdo_sqlite","mbstring","fileinfo","ctype"] as $e)
               if (!extension_loaded($e)) { fwrite(STDERR, "missing $e\n"); exit(1); }'
 
-      - name: Smoke test (frontend)
-        if: matrix.target == 'frontend'
-        run: docker run --rm local/grocy-frontend:ci nginx -t
+      - name: Boot test (production-like hardening)
+        run: |
+          printf '<?php\n' > "$RUNNER_TEMP/config.php"
+          docker run -d --name grocy-ci -p 8080:8080 \
+            --read-only --tmpfs /tmp \
+            --tmpfs /app/data:uid=65532,gid=65532 \
+            -v "$RUNNER_TEMP/config.php:/app/data/config.php:ro" \
+            --cap-drop ALL --security-opt no-new-privileges \
+            local/grocy:ci
+          code=000
+          for i in $(seq 1 30); do
+            code=$(curl -s -o "$RUNNER_TEMP/out" -w '%{http_code}' http://localhost:8080/ || true)
+            case "$code" in 200|302) break ;; esac
+            sleep 1
+          done
+          docker logs grocy-ci
+          if grep -q "Unable to run Grocy" "$RUNNER_TEMP/out" 2>/dev/null; then
+            cat "$RUNNER_TEMP/out"; exit 1
+          fi
+          case "$code" in 200|302) ;; *) echo "unexpected HTTP status: $code"; exit 1 ;; esac
+          docker rm -f grocy-ci
 
       - name: Trivy scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: local/grocy-${{ matrix.target }}:ci
+          image-ref: local/grocy:ci
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
@@ -76,7 +88,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ env.REPO_OWNER }}/grocy-${{ matrix.target }}
+          images: ghcr.io/${{ env.REPO_OWNER }}/grocy
           tags: |
             type=raw,value=${{ env.GROCY_VERSION }}
             type=sha,prefix=sha-
@@ -86,10 +98,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          target: ${{ matrix.target }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-from: type=gha
