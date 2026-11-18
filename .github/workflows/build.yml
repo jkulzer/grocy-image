@@ -34,7 +34,7 @@ jobs:
           echo "REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
           echo "GROCY_VERSION=$(grep -oP '^ARG GROCY_VERSION=v\K\S+' Dockerfile)" >> "$GITHUB_ENV"
 
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         if: github.event_name != 'pull_request'
@@ -138,7 +138,7 @@ jobs:
           pattern: digests-*
           merge-multiple: true
 
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
