@@ -9,7 +9,7 @@ RUN apk add --no-cache curl unzip \
  && mkdir /app && unzip -q /tmp/grocy.zip -d /app \
  && chmod -R go-w,a+rX /app
 
-FROM dunglas/frankenphp:1-php8.5-alpine@sha256:2423ae33ccb78af1e83e4815b5776b59e61af1000a5bb707c2cd8b84103e853d
+FROM dunglas/frankenphp:1-php8.5-alpine@sha256:8a71903362459768627d4b2af9cfb9bb0dfe4fe822cc486e265930f00c111ca6
 RUN install-php-extensions gd intl opcache \
  && setcap -r /usr/local/bin/frankenphp
 COPY Caddyfile /etc/frankenphp/Caddyfile
